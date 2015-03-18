@@ -124,7 +124,9 @@ class PubSubHTTPEndpoint {
     } else {
       serving_ = true;
     }
-    n_ = http_request_.url.query.has("n") ? bricks::strings::FromString<size_t>(http_request_.url.query["n"])
+    n_min_ = http_request_.url.query.has("n_min") ? bricks::strings::FromString<size_t>(http_request_.url.query["n_min"])
+                                          : 0;
+    n_max_ = http_request_.url.query.has("n_max") ? bricks::strings::FromString<size_t>(http_request_.url.query["n_max"])
                                           : 0;
   }
 
@@ -138,11 +140,14 @@ class PubSubHTTPEndpoint {
           serving_ = true;
         }
       }
-      if (serving_) {
+      if (serving_ || n_min_) {
         http_response_(entry, value_name_);
-        if (n_) {
-          --n_;
-          if (!n_) {
+        if (n_min_) {
+          --n_min_;
+        }
+        if (n_max_) {
+          --n_max_;
+          if (!n_max_) {
             return false;
           }
         }
@@ -159,15 +164,20 @@ class PubSubHTTPEndpoint {
   // Top-level JSON object name for Cereal.
   const std::string& value_name_;
 
-  // `http_request_`:  need to keep the passed in request in scope for the lifetime of the chunked response.
-  // `http_response_`: the instance of the chunked response object to use.
+  // Need to keep the passed in request in scope for the lifetime of the chunked response.
   Request http_request_;
+
+  //  The instance of the chunked response object to use.
   bricks::net::HTTPServerConnection::ChunkedResponseSender http_response_;
 
-  // The logic to serve the stream starting from certain timestamp.
-  bool serving_;
+  // Entries with timestamps less than `from_timestamp_` will be served only if `n_min` is greater than zero.
   bricks::time::EPOCH_MILLISECONDS from_timestamp_;
-  size_t n_;
+  // The flag that indicates that entry timestamps went past `from_timestamp_`.
+  bool serving_;
+  // The number of entries to serve regardless of `from_timestamp_`.
+  size_t n_min_;
+  // The number of entries to serve before terminating; `0` stands for infinity.
+  size_t n_max_;
 
   PubSubHTTPEndpoint() = delete;
   PubSubHTTPEndpoint(const PubSubHTTPEndpoint&) = delete;
