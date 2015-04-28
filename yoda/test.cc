@@ -94,7 +94,7 @@ struct KeyValueAggregateListener {
   }
 };
 
-TEST(Sherlock, NonPolymorphicKeyValueStorage) {
+TEST(Sherlock, NonPolymorphicKeyEntryStorage) {
   typedef yoda::API<yoda::KeyEntry<KeyValueEntry>> TestAPI;
   TestAPI api("non_polymorphic_yoda");
 
@@ -226,4 +226,76 @@ TEST(Sherlock, NonPolymorphicKeyValueStorage) {
   api.Subscribe(listener).Join();
   EXPECT_EQ(data.seen_, 6u);
   EXPECT_EQ("2=0.50,3=0.33,4=0.25,5=0.20,6=0.17,7=0.76", data.results_);
+}
+
+struct StringKey {
+  std::string key;
+  double value;
+
+  StringKey(const std::string& key = std::string(), const double value = 0.0)
+      : key(key), value(value) {}
+
+  template <typename A>
+  void serialize(A& ar) {
+    ar(CEREAL_NVP(key), CEREAL_NVP(value));
+  }
+};
+
+TEST(Sherlock, TestSometimesFails) {
+  typedef yoda::API<yoda::KeyEntry<StringKey>> TestAPI;
+  TestAPI api("non_polymorphic_yoda");
+  const std::string key("2");
+
+  // Add the first key-value pair.
+  // Use `UnsafeStream()`, since generally the only way to access the underlying stream is to make API calls.
+  api.UnsafeStream().Emplace(key, 0.5);
+
+  while (!api.CaughtUp()) {
+    // Spin lock, for the purposes of this test.
+    // Ensure that the data has reached the the processor that maintains the in-memory state of the API.
+  }
+
+  // Future expanded syntax.
+  std::future<StringKey> f1 = api.AsyncGet(TestAPI::T_KEY(key));
+  StringKey r1 = f1.get();
+  EXPECT_EQ(key, r1.key);
+  EXPECT_EQ(0.5, r1.value);
+
+  // Future short syntax.
+  EXPECT_EQ(0.5, api.AsyncGet("2").get().value);
+
+  // Future short syntax with type omitted.
+  EXPECT_EQ(0.5, api.AsyncGet("2").get().value);
+}
+
+struct MatrixCell {
+  size_t row;
+  std::string col;
+  int value;
+
+  MatrixCell(const size_t row = 0, const std::string& col = std::string("0"), const int value = 0)
+      : row(row), col(col), value(value) {}
+
+  template <typename A>
+  void serialize(A& ar) {
+    ar(CEREAL_NVP(row), CEREAL_NVP(col), CEREAL_NVP(value));
+  }
+};
+
+TEST(Sherlock, NonPolymorphicMatrixEntryStorage) {
+  typedef yoda::API<yoda::MatrixEntry<MatrixCell>> TestAPI;
+  TestAPI api("non_polymorphic_yoda");
+
+  // Add the first key-value pair.
+  // Use `UnsafeStream()`, since generally the only way to access the underlying stream is to make API calls.
+  const std::string c1("x");
+  api.UnsafeStream().Emplace(5, c1, -1);
+
+  while (!api.CaughtUp()) {
+    // Spin lock, for the purposes of this test.
+    // Ensure that the data has reached the the processor that maintains the in-memory state of the API.
+  }
+ 
+  //EXPECT_EQ(-1, api.AsyncGet(5, c1).get().value);
+  //EXPECT_EQ(-1, api.AsyncGet(5, std::string("x")).get().value);
 }

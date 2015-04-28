@@ -32,8 +32,10 @@ SOFTWARE.
 
 namespace yoda {
 
+// Exceptions for `KeyEntry` type of storage.
+//
 // Exception types for non-existent keys.
-// Cover exception type for all key types and templated, narrowed down exception types, one per entry key type.
+// Cover exception type for all entry types and templated, narrowed down exception types, one per entry type.
 struct KeyNotFoundCoverException : bricks::Exception {};
 
 template <typename ENTRY>
@@ -45,7 +47,7 @@ struct KeyNotFoundException : KeyNotFoundCoverException {
 };
 
 // Exception types for the existence of a particular key being a runtime error.
-// Cover exception type for all key types and templated, narrowed down exception types, one per entry key type.
+// Cover exception type for all entry types and templated, narrowed down exception types, one per entry type.
 struct KeyAlreadyExistsCoverException : bricks::Exception {};
 
 template <typename ENTRY>
@@ -55,6 +57,35 @@ struct KeyAlreadyExistsException : KeyAlreadyExistsCoverException {
   explicit KeyAlreadyExistsException(const ENTRY& entry) : entry(entry) {}
 };
 
+// Exceptions for `MatrixEntry` type  of storage.
+//
+// Exception types for non-existent cells.
+// Cover exception type for entry types and templated, narrowed down exception types, one per entry key type.
+struct CellNotFoundCoverException : bricks::Exception {};
+
+template <typename ENTRY>
+struct CellNotFoundException : CellNotFoundCoverException {
+  typedef ENTRY T_ENTRY;
+  typedef ENTRY_ROW_TYPE<ENTRY> T_ROW;
+  typedef ENTRY_COL_TYPE<ENTRY> T_COL;
+  const T_ROW row;
+  const T_COL col;
+  explicit CellNotFoundException(const T_ROW& row, const T_COL& col) : row(row), col(col) {}
+};
+
+// Exception types for the existence of a particular cell being a runtime error.
+// Cover exception type for all entry types and templated, narrowed down exception types, one per entry type.
+struct CellAlreadyExistsCoverException : bricks::Exception {};
+
+template <typename ENTRY>
+struct CellAlreadyExistsException : CellAlreadyExistsCoverException {
+  typedef ENTRY T_ENTRY;
+  const ENTRY entry;
+  explicit CellAlreadyExistsException(const ENTRY& entry) : entry(entry) {}
+};
+
+// Exceptions used for both, `KeyEntry` and `MatrixEntry` types.
+//
 // Exception types for non-existence of a particular key being a runtime error.
 // Cover exception type for all key types and templated, narrowed down exception types, one per entry key type.
 struct EntryShouldExistCoverException : bricks::Exception {};
