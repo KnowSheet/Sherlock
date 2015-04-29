@@ -159,16 +159,16 @@ struct SherlockListener<KeyEntry<ENTRY>> {
     //                 (And add a `/statusz` endpoint to monitor the status wrt ready / not yet ready.)
     // TODO(dkorolev): What about an empty stream? :-)
 
-    if (index + 1 == total) {
-      caught_up_ = true;
-    }
-
     // Non-polymorphic usecase.
     // TODO(dkorolev): Eliminate the copy && code up the polymorphic scenario for this call. In another class.
     mq_.EmplaceMessage(new MQMessageEntry(entry));
 
     // This is primarily for unit testing purposes.
     ++entries_seen_;
+
+    if (index + 1 == total) {
+      caught_up_ = true;
+    }
 
     return true;
   }
@@ -194,6 +194,7 @@ struct Storage<KeyEntry<ENTRY>> {
   typedef std::function<void(const T_ENTRY&)> T_ENTRY_CALLBACK;
   typedef std::function<void(const T_KEY&)> T_KEY_CALLBACK;
   typedef std::function<void()> T_VOID_CALLBACK;
+  typedef std::function<void(const Container<KeyEntry<ENTRY>>&)> T_USER_FUNCTION;
 
   typedef KeyNotFoundException<T_ENTRY> T_KEY_NOT_FOUND_EXCEPTION;
   typedef KeyAlreadyExistsException<T_ENTRY> T_KEY_ALREADY_EXISTS_EXCEPTION;
@@ -281,6 +282,18 @@ struct Storage<KeyEntry<ENTRY>> {
     }
   };
 
+  struct MQMessageFunction : MQMessage<KeyEntry<ENTRY>> {
+    using typename MQMessage<KeyEntry<ENTRY>>::T_STREAM_TYPE;
+
+    T_USER_FUNCTION function;
+
+    explicit MQMessageFunction(T_USER_FUNCTION function) : function(function) {}
+
+    virtual void DoIt(Container<KeyEntry<ENTRY>>& container, T_STREAM_TYPE&) override {
+      function(container);
+    }
+  };
+
   std::future<T_ENTRY> AsyncGet(const T_KEY& key) {
     std::promise<T_ENTRY> pr;
     std::future<T_ENTRY> future = pr.get_future();
@@ -309,6 +322,10 @@ struct Storage<KeyEntry<ENTRY>> {
   }
 
   void Add(const T_ENTRY& entry) { AsyncAdd(entry).get(); }
+
+  void ApplyFunction(T_USER_FUNCTION function) {
+    mq_.EmplaceMessage(new MQMessageFunction(function));
+  }
 
  private:
   T_MQ& mq_;

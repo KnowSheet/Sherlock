@@ -108,10 +108,6 @@ struct SherlockListener<MatrixEntry<ENTRY>> {
     //                 (And add a `/statusz` endpoint to monitor the status wrt ready / not yet ready.)
     // TODO(dkorolev): What about an empty stream? :-)
 
-    if (index + 1 == total) {
-      caught_up_ = true;
-    }
-
     // Non-polymorphic usecase.
     // TODO(dkorolev): Eliminate the copy && code up the polymorphic scenario for this call. In another class.
     mq_.EmplaceMessage(new MQMessageEntry(entry));
@@ -119,7 +115,11 @@ struct SherlockListener<MatrixEntry<ENTRY>> {
     // This is primarily for unit testing purposes.
     ++entries_seen_;
 
-    return true;
+    if (index + 1 == total) {
+      caught_up_ = true;
+    }
+
+   return true;
   }
 
   // Sherlock stream listener call.
@@ -144,6 +144,7 @@ struct Storage<MatrixEntry<ENTRY>> {
   typedef std::function<void(const T_ENTRY&)> T_ENTRY_CALLBACK;
   typedef std::function<void(const T_ROW&, const T_COL&)> T_CELL_CALLBACK;
   typedef std::function<void()> T_VOID_CALLBACK;
+  typedef std::function<void(const Container<MatrixEntry<ENTRY>>&)> T_USER_FUNCTION;
 
   typedef CellNotFoundException<T_ENTRY> T_CELL_NOT_FOUND_EXCEPTION;
   typedef CellAlreadyExistsException<T_ENTRY> T_CELL_ALREADY_EXISTS_EXCEPTION;
@@ -223,7 +224,7 @@ struct Storage<MatrixEntry<ENTRY>> {
       bool cell_exists = false;
       const auto rit = container.forward.find(GetRow(e));
       if (rit != container.forward.end()) {
-        cell_exists = static_cast<bool>(rit->secon.count(GetCol(e)));
+        cell_exists = static_cast<bool>(rit->second.count(GetCol(e)));
       }
       if (cell_exists) {
         if (on_failure) {  // Callback function defined.
@@ -241,6 +242,18 @@ struct Storage<MatrixEntry<ENTRY>> {
           pr.set_value();
         }
       }
+    }
+  };
+
+  struct MQMessageFunction : MQMessage<MatrixEntry<ENTRY>> {
+    using typename MQMessage<MatrixEntry<ENTRY>>::T_STREAM_TYPE;
+
+    T_USER_FUNCTION function;
+
+    explicit MQMessageFunction(T_USER_FUNCTION function) : function(function) {}
+
+    virtual void DoIt(Container<MatrixEntry<ENTRY>>& container, T_STREAM_TYPE&) override {
+      function(container);
     }
   };
 
@@ -274,6 +287,10 @@ struct Storage<MatrixEntry<ENTRY>> {
   }
 
   void Add(const T_ENTRY& entry) { AsyncAdd(entry).get(); }
+
+  void ApplyFunction(T_USER_FUNCTION function) {
+    mq_.EmplaceMessage(new MQMessageFunction(function));
+  }
 
  private:
   T_MQ& mq_;
