@@ -70,22 +70,51 @@ struct DefaultPolicy<KeyEntry<ENTRY>> {
                 "To support non-throwing `Get()`, make the entry types derive from `yoda::Nullable`.");
 };
 
-// The implementation for the logic of `allow_nonthrowing_get`.
-template <typename T_KEY, typename T_ENTRY, typename T_KEY_NOT_FOUND_EXCEPTION, bool>
-struct SetPromiseToNullEntryOrThrow {};
+// The implementation for the logic of `allow_nonthrowing_get` for `KeyEntry`
+// type.
+template <typename T_ENTRY, typename T_KEY_NOT_FOUND_EXCEPTION, bool>
+struct KeyEntrySetPromiseToNullEntryOrThrow {};
 
-template <typename T_KEY, typename T_ENTRY, typename T_KEY_NOT_FOUND_EXCEPTION>
-struct SetPromiseToNullEntryOrThrow<T_KEY, T_ENTRY, T_KEY_NOT_FOUND_EXCEPTION, false> {
+template <typename T_ENTRY, typename T_KEY_NOT_FOUND_EXCEPTION>
+struct KeyEntrySetPromiseToNullEntryOrThrow<T_ENTRY, T_KEY_NOT_FOUND_EXCEPTION, false> {
+  typedef ENTRY_KEY_TYPE<T_ENTRY> T_KEY;
   static void DoIt(const T_KEY& key, std::promise<T_ENTRY>& pr) {
     pr.set_exception(std::make_exception_ptr(T_KEY_NOT_FOUND_EXCEPTION(key)));
   }
 };
 
-template <typename T_KEY, typename T_ENTRY, typename UNUSED_T_KEY_NOT_FOUND_EXCEPTION>
-struct SetPromiseToNullEntryOrThrow<T_KEY, T_ENTRY, UNUSED_T_KEY_NOT_FOUND_EXCEPTION, true> {
+template <typename T_ENTRY, typename UNUSED_T_KEY_NOT_FOUND_EXCEPTION>
+struct KeyEntrySetPromiseToNullEntryOrThrow<T_ENTRY, UNUSED_T_KEY_NOT_FOUND_EXCEPTION, true> {
+  typedef ENTRY_KEY_TYPE<T_ENTRY> T_KEY;
   static void DoIt(const T_KEY& key, std::promise<T_ENTRY>& pr) {
     T_ENTRY null_entry(NullEntry);
     SetKey(null_entry, key);
+    pr.set_value(null_entry);
+  }
+};
+
+// The implementation for the logic of `allow_nonthrowing_get` for `MatrixEntry`
+// type.
+template <typename T_ENTRY, typename T_CELL_NOT_FOUND_EXCEPTION, bool>
+struct MatrixEntrySetPromiseToNullEntryOrThrow {};
+
+template <typename T_ENTRY, typename T_CELL_NOT_FOUND_EXCEPTION>
+struct MatrixEntrySetPromiseToNullEntryOrThrow<T_ENTRY, T_CELL_NOT_FOUND_EXCEPTION, false> {
+  typedef ENTRY_ROW_TYPE<T_ENTRY> T_ROW;
+  typedef ENTRY_COL_TYPE<T_ENTRY> T_COL;
+  static void DoIt(const T_ROW& row, const T_COL& col, std::promise<T_ENTRY>& pr) {
+    pr.set_exception(std::make_exception_ptr(T_CELL_NOT_FOUND_EXCEPTION(row, col)));
+  }
+};
+
+template <typename T_ENTRY, typename UNUSED_T_CELL_NOT_FOUND_EXCEPTION>
+struct MatrixEntrySetPromiseToNullEntryOrThrow<T_ENTRY, UNUSED_T_CELL_NOT_FOUND_EXCEPTION, true> {
+  typedef ENTRY_ROW_TYPE<T_ENTRY> T_ROW;
+  typedef ENTRY_COL_TYPE<T_ENTRY> T_COL;
+  static void DoIt(const T_ROW& row, const T_COL& col, std::promise<T_ENTRY>& pr) {
+    T_ENTRY null_entry(NullEntry);
+    SetRow(null_entry, row);
+    SetCol(null_entry, col);
     pr.set_value(null_entry);
   }
 };

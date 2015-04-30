@@ -94,9 +94,9 @@ struct KeyValueAggregateListener {
   }
 };
 
-TEST(Sherlock, NonPolymorphicKeyValueStorage) {
+TEST(Sherlock, NonPolymorphicKeyEntryStorage) {
   typedef yoda::API<yoda::KeyEntry<KeyValueEntry>> TestAPI;
-  TestAPI api("non_polymorphic_yoda");
+  TestAPI api("non_polymorphic_keyentry_yoda");
 
   // Add the first key-value pair.
   // Use `UnsafeStream()`, since generally the only way to access the underlying stream is to make API calls.
@@ -121,7 +121,7 @@ TEST(Sherlock, NonPolymorphicKeyValueStorage) {
 
   // Callback version.
   struct CallbackTest {
-    explicit CallbackTest(int key, double value, bool expect_success = true)
+    explicit CallbackTest(const int key, const double value, const bool expect_success = true)
         : key(key), value(value), expect_success(expect_success) {}
 
     void found(const KeyValueEntry& entry) const {
@@ -131,17 +131,20 @@ TEST(Sherlock, NonPolymorphicKeyValueStorage) {
       EXPECT_EQ(key, entry.key);
       EXPECT_EQ(value, entry.value);
     }
+
     void not_found(const int key) const {
       ASSERT_FALSE(called);
       called = true;
       EXPECT_FALSE(expect_success);
       EXPECT_EQ(this->key, key);
     }
+
     void added() const {
       ASSERT_FALSE(called);
       called = true;
       EXPECT_TRUE(expect_success);
     }
+
     void already_exists() const {
       ASSERT_FALSE(called);
       called = true;
@@ -226,4 +229,163 @@ TEST(Sherlock, NonPolymorphicKeyValueStorage) {
   api.Subscribe(listener).Join();
   EXPECT_EQ(data.seen_, 6u);
   EXPECT_EQ("2=0.50,3=0.33,4=0.25,5=0.20,6=0.17,7=0.76", data.results_);
+
+  // Test user function accessing the underlying container.
+  typedef yoda::Container<yoda::KeyEntry<KeyValueEntry>> T_CONTAINER;
+  double sum = 0.0;
+  bool done = false;
+  api.AsyncCallFunction([&](const T_CONTAINER& container) {
+    for (const auto i : container.data) {
+      sum += i.second.value;
+    }
+    done = true;
+  });
+  while (!done) {
+    ;  // Spin lock.
+  }
+  EXPECT_DOUBLE_EQ(2.21, sum);
+}
+
+struct MatrixCell {
+  size_t row;
+  std::string col;
+  int value;
+
+  MatrixCell(const size_t row = 0, const std::string& col = std::string("0"), const int value = 0)
+      : row(row), col(col), value(value) {}
+
+  template <typename A>
+  void serialize(A& ar) {
+    ar(CEREAL_NVP(row), CEREAL_NVP(col), CEREAL_NVP(value));
+  }
+};
+
+TEST(Sherlock, NonPolymorphicMatrixEntryStorage) {
+  typedef yoda::API<yoda::MatrixEntry<MatrixCell>> TestAPI;
+  TestAPI api("non_polymorphic_matrix_yoda");
+
+  // Add the first key-value pair.
+  // Use `UnsafeStream()`, since generally the only way to access the underlying stream is to make API calls.
+  api.UnsafeStream().Emplace(5, "x", -1);
+
+  while (!api.CaughtUp()) {
+    // Spin lock, for the purposes of this test.
+    // Ensure that the data has reached the the processor that maintains the in-memory state of the API.
+  }
+ 
+  EXPECT_EQ(-1, api.AsyncGet(5, "x").get().value);
+  EXPECT_EQ(-1, api.Get(5, "x").value);
+
+  // Callback version.
+  struct CallbackTest {
+    explicit CallbackTest(const size_t row, const std::string& col, const int value, const bool expect_success = true)
+        : row(row), col(col), value(value), expect_success(expect_success) {}
+
+    void found(const MatrixCell& entry) const {
+      ASSERT_FALSE(called);
+      called = true;
+      EXPECT_TRUE(expect_success);
+      EXPECT_EQ(row, entry.row);
+      EXPECT_EQ(col, entry.col);
+      EXPECT_EQ(value, entry.value);
+    }
+
+    void not_found(const size_t row, const std::string& col) const {
+      ASSERT_FALSE(called);
+      called = true;
+      EXPECT_FALSE(expect_success);
+      EXPECT_EQ(this->row, row);
+      EXPECT_EQ(this->col, col);
+    }
+
+    void added() const {
+      ASSERT_FALSE(called);
+      called = true;
+      EXPECT_TRUE(expect_success);
+    }
+
+    void already_exists() const {
+      ASSERT_FALSE(called);
+      called = true;
+      EXPECT_FALSE(expect_success);
+    }
+
+    const size_t row;
+    const std::string col;
+    const int value;
+    const bool expect_success;
+    mutable bool called = false;
+  };
+
+  const CallbackTest cbt1(5, "x", -1);
+  api.AsyncGet(TestAPI::T_ROW(5),
+               TestAPI::T_COL("x"),
+               std::bind(&CallbackTest::found, &cbt1, std::placeholders::_1),
+               std::bind(&CallbackTest::not_found, &cbt1, std::placeholders::_1, std::placeholders::_2));
+  while (!cbt1.called) {
+    ;  // Spin lock.
+  }
+
+  ASSERT_THROW(api.AsyncGet(5, "y").get(), TestAPI::T_CELL_NOT_FOUND_EXCEPTION);
+  ASSERT_THROW(api.AsyncGet(5, "y").get(), yoda::CellNotFoundCoverException);
+  ASSERT_THROW(api.Get(1, "x"), TestAPI::T_CELL_NOT_FOUND_EXCEPTION);
+  ASSERT_THROW(api.Get(1, "x"), yoda::CellNotFoundCoverException);
+  const CallbackTest cbt2(123, "no_entry", 0, false);
+  api.AsyncGet(123, "no_entry",
+               std::bind(&CallbackTest::found, &cbt2, std::placeholders::_1),
+               std::bind(&CallbackTest::not_found, &cbt2, std::placeholders::_1, std::placeholders::_2));
+  while (!cbt2.called) {
+    ;  // Spin lock.
+  }
+
+  // Add three more key-value pairs, this time via the API.
+  api.AsyncAdd(MatrixCell(5, "y", 15)).wait();
+  api.Add(MatrixCell(1, "x", -9));
+  const CallbackTest cbt3(42, "the_answer", 1);
+  api.AsyncAdd(TestAPI::T_ENTRY(42, "the_answer", 1),
+               std::bind(&CallbackTest::added, &cbt3),
+               std::bind(&CallbackTest::already_exists, &cbt3));
+  while (!cbt3.called) {
+    ;  // Spin lock.
+  }
+
+  EXPECT_EQ(15, api.Get(5, "y").value);
+  EXPECT_EQ(-9, api.Get(1, "x").value);
+  EXPECT_EQ(1, api.Get(42, "the_answer").value);
+
+  // Check that default policy doesn't allow overwriting on Add().
+  ASSERT_THROW(api.AsyncAdd(MatrixCell(5, "y", 8)).get(), TestAPI::T_CELL_ALREADY_EXISTS_EXCEPTION);
+  ASSERT_THROW(api.AsyncAdd(MatrixCell(5, "y", 100)).get(), yoda::CellAlreadyExistsCoverException);
+  ASSERT_THROW(api.Add(MatrixCell(1, "x", 2)), TestAPI::T_CELL_ALREADY_EXISTS_EXCEPTION);
+  ASSERT_THROW(api.Add(MatrixCell(1, "x", 2)), yoda::CellAlreadyExistsCoverException);
+  const CallbackTest cbt4(42, "the_answer", 0, false);
+  api.AsyncAdd(TestAPI::T_ENTRY(42, "the_answer", 0),
+               std::bind(&CallbackTest::added, &cbt4),
+               std::bind(&CallbackTest::already_exists, &cbt4));
+  while (!cbt4.called) {
+    ;  // Spin lock.
+  }
+
+   // Test user function accessing the underlying container.
+  typedef yoda::Container<yoda::MatrixEntry<MatrixCell>> T_CONTAINER;
+  size_t row_index_sum = 0;
+  int value_sum = 0;
+  bool done = false;
+  api.AsyncCallFunction([&](const T_CONTAINER& container) {
+    // Testing forward and transposed matrices.
+    for (const auto rit : container.forward) {
+      row_index_sum += rit.first;
+    }
+    for (const auto cit : container.transposed) {
+      for (const auto rit : cit.second) {
+        value_sum += rit.second.value;
+      }
+    }
+    done = true;
+  });
+  while (!done) {
+    ;  // Spin lock.
+  }
+  EXPECT_EQ(48u, row_index_sum);
+  EXPECT_EQ(6, value_sum);
 }
