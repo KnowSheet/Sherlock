@@ -234,8 +234,8 @@ TEST(Sherlock, NonPolymorphicKeyEntryStorage) {
   typedef yoda::Container<yoda::KeyEntry<KeyValueEntry>> T_CONTAINER;
   double sum = 0.0;
   bool done = false;
-  api.ApplyFunction([&](const T_CONTAINER& container) {
-    for (auto i : container.data) {
+  api.AsyncCallFunction([&](const T_CONTAINER& container) {
+    for (const auto i : container.data) {
       sum += i.second.value;
     }
     done = true;
@@ -371,13 +371,13 @@ TEST(Sherlock, NonPolymorphicMatrixEntryStorage) {
   size_t row_index_sum = 0;
   int value_sum = 0;
   bool done = false;
-  api.ApplyFunction([&](const T_CONTAINER& container) {
+  api.AsyncCallFunction([&](const T_CONTAINER& container) {
     // Testing forward and transposed matrices.
-    for (auto rit : container.forward) {
+    for (const auto rit : container.forward) {
       row_index_sum += rit.first;
     }
-    for (auto cit : container.transposed) {
-      for (auto rit : cit.second) {
+    for (const auto cit : container.transposed) {
+      for (const auto rit : cit.second) {
         value_sum += rit.second.value;
       }
     }

@@ -84,7 +84,7 @@ struct CellAlreadyExistsException : CellAlreadyExistsCoverException {
   explicit CellAlreadyExistsException(const ENTRY& entry) : entry(entry) {}
 };
 
-// Exceptions used for both, `KeyEntry` and `MatrixEntry` types.
+// Exceptions used for both `KeyEntry` and `MatrixEntry` types.
 //
 // Exception types for non-existence of a particular key being a runtime error.
 // Cover exception type for all key types and templated, narrowed down exception types, one per entry key type.

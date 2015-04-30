@@ -1,8 +1,8 @@
 /*******************************************************************************
 The MIT License (MIT)
 
-Copyright (c) 2015 Dmitry "Dima" Korolev <dmitry.korolev@gmail.com>
-          (c) 2015 Maxim Zhurovich <zhurovich@gmail.com>
+Copyright (c) 2015 Maxim Zhurovich <zhurovich@gmail.com>
+          (c) 2015 Dmitry "Dima" Korolev <dmitry.korolev@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -288,7 +288,7 @@ struct Storage<MatrixEntry<ENTRY>> {
 
   void Add(const T_ENTRY& entry) { AsyncAdd(entry).get(); }
 
-  void ApplyFunction(T_USER_FUNCTION function) {
+  void AsyncCallFunction(T_USER_FUNCTION function) {
     mq_.EmplaceMessage(new MQMessageFunction(function));
   }
 
