@@ -47,7 +47,8 @@ struct LabeledFlower : yoda::Padawan {
   LabeledFlower() = default;
   LabeledFlower(const LabeledFlower&) = default;
   LabeledFlower(size_t key, double sl, double sw, double pl, double pw, const std::string& l)
-      : key(key), SL(sl), SW(sw), PL(pl), PW(pw), label(l) {}
+      : key(key), SL(sl), SW(sw), PL(pl), PW(pw), label(l) {
+  }
 
   template <typename A>
   void serialize(A& ar) {

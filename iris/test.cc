@@ -29,14 +29,17 @@ SOFTWARE.
 #include "../yoda/yoda.h"
 
 #include "../../Bricks/net/api/api.h"
+#include "../../Bricks/graph/gnuplot.h"
+#include "../../Bricks/strings/printf.h"
+
 #include "../../Bricks/dflags/dflags.h"
 #include "../../Bricks/3party/gtest/gtest-main-with-dflags.h"
-#include "../../Bricks/strings/printf.h"
 
 #include "iris.h"
 CEREAL_REGISTER_TYPE(LabeledFlower);
 
 using namespace bricks::strings;
+using namespace bricks::gnuplot;
 using namespace yoda;
 
 DEFINE_bool(run, false, "Set to true to run indefinitely.");
@@ -49,6 +52,10 @@ struct RESTfulResponse {
   void operator()(T&& response) { request(std::forward<T>(response)); }
 };
 
+// Flower ID, auto-increasing for test purposes.
+size_t number_of_flowers = 0;
+std::map<size_t, std::string> dimension_names;
+
 TEST(Iris, Demo) {
   typedef API<KeyEntry<LabeledFlower>> TestAPI;
   TestAPI api("labeled_flowers");
@@ -57,27 +64,28 @@ TEST(Iris, Demo) {
     EXPECT_EQ("POST", r.method);
     const std::string data = r.body;
     api.Call([data](TestAPI::T_CONTAINER_WRAPPER& cw) {
-               // Flower index in the file is its ID.
-               // Importing flowers can and should only be done once for this test.
-               size_t key = 0;
                // Skip the first line with labels.
                bool first_line = true;
                for (auto flower_definition_line : Split<ByLines>(data)) {
                  std::vector<std::string> flower_definition_fields = Split(flower_definition_line, '\t');
                  assert(flower_definition_fields.size() == 5u);
                  if (first_line && flower_definition_fields.back() == "Label") {
+                   dimension_names.clear();
+                   for (size_t i = 0; i < flower_definition_fields.size() - 1; ++i) {
+                     dimension_names[i] = flower_definition_fields[i];
+                   }
                    continue;
                  }
                  first_line = false;
                  // Parse flower data and add it.
-                 cw.Add(LabeledFlower(++key,
+                 cw.Add(LabeledFlower(++number_of_flowers,
                                       FromString<double>(flower_definition_fields[0]),
                                       FromString<double>(flower_definition_fields[1]),
                                       FromString<double>(flower_definition_fields[2]),
                                       FromString<double>(flower_definition_fields[3]),
                                       flower_definition_fields[4]));
                }
-               return Printf("Successfully imported %d flowers.\n", static_cast<int>(key));
+               return Printf("Successfully imported %d flowers.\n", static_cast<int>(number_of_flowers));
              },
              RESTfulResponse<std::string>(std::move(r)));
   });
@@ -95,6 +103,55 @@ TEST(Iris, Demo) {
       const auto id = FromString<int>(r.url.query["id"]);
       api.Call([id](TestAPI::T_CONTAINER_WRAPPER& cw) { return cw.Get(id); },
                RESTfulResponse<EntryWrapper<LabeledFlower>>(std::move(r)));
+    });
+
+    // Ref.: http://localhost:3000/viz
+    // Ref.: http://localhost:3000/viz?x=1&y=2
+    HTTP(FLAGS_iris_port).Register("/viz", [&api](Request r) {
+      auto x_dim = std::min(size_t(3), FromString<size_t>(r.url.query.get("x", "0")));
+      auto y_dim = std::min(size_t(3), FromString<size_t>(r.url.query.get("y", "1")));
+      if (y_dim == x_dim) {
+        y_dim = (x_dim + 1) % 4;
+      }
+      struct PlotIrises {
+        struct Data {
+          std::string x_label;
+          std::string y_label;
+          std::map<std::string, std::vector<std::pair<double, double>>> labeled_flowers;
+        };
+        Request request;
+        explicit PlotIrises(Request request) : request(std::move(request)) {}
+        void operator()(Data data) {
+          GNUPlot graph;
+          graph.Title("Iris flower data set.")
+              .Grid("back")
+              .XLabel(data.x_label)
+              .YLabel(data.y_label)
+              .ImageSize(800)
+              .OutputFormat("pngcairo");
+          for (const auto& per_label : data.labeled_flowers) {
+            graph.Plot(WithMeta([&per_label](Plotter& p) {
+                                  for (const auto& xy : per_label.second) {
+                                    p(xy.first, xy.second);
+                                  }
+                                })
+                           .AsPoints()
+                           .Name(per_label.first));
+          }
+          request(graph);
+        }
+      };
+      api.Call([x_dim, y_dim](TestAPI::T_CONTAINER_WRAPPER& cw) {
+                 PlotIrises::Data data;
+                 for (size_t i = 1; i <= number_of_flowers; ++i) {
+                   const LabeledFlower& flower = cw.Get(i)();
+                   data.labeled_flowers[flower.label].emplace_back(flower.x[x_dim], flower.x[y_dim]);
+                 }
+                 data.x_label = dimension_names[x_dim];
+                 data.y_label = dimension_names[y_dim];
+                 return data;
+               },
+               PlotIrises(std::move(r)));
     });
 
     HTTP(FLAGS_iris_port).Join();
