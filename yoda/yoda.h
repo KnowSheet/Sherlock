@@ -88,6 +88,8 @@ SOFTWARE.
 #include "api/key_entry/key_entry.h"
 #include "api/matrix/matrix_entry.h"
 
+#include "../../Bricks/net/api/api.h"  // For an HTTP listener.
+
 namespace yoda {
 
 // `yoda::APIWrapper` requires the list of specific entries to expose through the Yoda API.
@@ -109,6 +111,10 @@ struct APIWrapper
         mq_(mq_listener_),
         stream_listener_(mq_),
         sherlock_listener_scope_(stream_.Subscribe(stream_listener_)) {}
+
+  void ExposeViaHTTP(int port, const std::string& endpoint) {
+    HTTP(port).Register(endpoint, stream_);
+  }
 
   typename YT::T_STREAM_TYPE& UnsafeStream() { return stream_; }
 
