@@ -34,6 +34,7 @@ SOFTWARE.
 #include "../../Bricks/exception.h"
 #include "../../Bricks/cerealize/cerealize.h"
 #include "../../Bricks/time/chrono.h"
+#include "../../Bricks/net/api/api.h"
 
 namespace yoda {
 
@@ -69,6 +70,21 @@ struct EntryWrapper {
       return *entry;
     } else {
       throw NonexistentEntryAccessed();
+    }
+  }
+  struct NotFoundResponse {
+    const std::string error = "NOT_FOUND";
+    NotFoundResponse() {}
+    template<typename A>
+    void serialize(A& ar) {
+      ar(CEREAL_NVP(error));
+    }
+  };
+  void RespondViaHTTP(Request r) {
+    if (exists) {
+      r(*entry);
+    } else {
+      r(NotFoundResponse(), HTTPResponseCode.NotFound);
     }
   }
 

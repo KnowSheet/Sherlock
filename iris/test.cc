@@ -42,15 +42,16 @@ using namespace yoda;
 DEFINE_bool(run, false, "Set to true to run indefinitely.");
 DEFINE_int32(iris_port, 3000, "");
 
-TEST(Iris, SmokeTest) {
+template <typename T>
+struct RESTfulResponse {
+  Request request;
+  explicit RESTfulResponse(Request request) : request(std::move(request)) {}
+  void operator()(T&& response) { request(std::forward<T>(response)); }
+};
+
+TEST(Iris, Demo) {
   typedef API<KeyEntry<LabeledFlower>> TestAPI;
   TestAPI api("labeled_flowers");
-
-  struct RESTfulResponse {
-    Request request;
-    explicit RESTfulResponse(Request request) : request(std::move(request)) {}
-    void operator()(const std::string& response) { request(response); }
-  };
 
   HTTP(FLAGS_iris_port).Register("/import", [&api](Request r) {
     EXPECT_EQ("POST", r.method);
@@ -78,16 +79,24 @@ TEST(Iris, SmokeTest) {
                }
                return Printf("Successfully imported %d flowers.\n", static_cast<int>(key));
              },
-             RESTfulResponse(std::move(r)));
+             RESTfulResponse<std::string>(std::move(r)));
   });
 
   EXPECT_EQ("Successfully imported 150 flowers.\n",
             HTTP(POSTFromFile(Printf("http://localhost:%d/import", FLAGS_iris_port), "dataset.tsv", "text/tsv"))
                 .body);
 
+  // Ref.: http://localhost:3000/pubsub
   api.ExposeViaHTTP(FLAGS_iris_port, "/pubsub");
 
   if (FLAGS_run) {
+    // Ref.: http://localhost:3000/get?id=42
+    HTTP(FLAGS_iris_port).Register("/get", [&api](Request r) {
+      const auto id = FromString<int>(r.url.query["id"]);
+      api.Call([id](TestAPI::T_CONTAINER_WRAPPER& cw) { return cw.Get(id); },
+               RESTfulResponse<EntryWrapper<LabeledFlower>>(std::move(r)));
+    });
+
     HTTP(FLAGS_iris_port).Join();
   }
 }
