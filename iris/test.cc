@@ -105,6 +105,26 @@ TEST(Iris, Demo) {
                RESTfulResponse<EntryWrapper<LabeledFlower>>(std::move(r)));
     });
 
+    // Ref.: [POST] http://localhost:3000/add?label=setosa&sl=5&sw=5&pl=5&pw=5
+    HTTP(FLAGS_iris_port).Register("/add", [&api](Request r) {
+      const std::string label = r.url.query["label"];
+      const auto sl = FromString<double>(r.url.query["sl"]);
+      const auto sw = FromString<double>(r.url.query["sw"]);
+      const auto pl = FromString<double>(r.url.query["pl"]);
+      const auto pw = FromString<double>(r.url.query["pw"]);
+      // In real life this should be a POST.
+      if (!label.empty()) {
+        LabeledFlower flower(++number_of_flowers, sl, sw, pl, pw, label);
+        api.Call([flower](TestAPI::T_CONTAINER_WRAPPER& cw) {
+                   cw.Add(flower);
+                   return "OK\n";
+                 },
+                 RESTfulResponse<std::string>(std::move(r)));
+      } else {
+        r("Need non-empty label, as well as sl/sw/pl/pw.\n");
+      }
+    });
+
     // Ref.: http://localhost:3000/viz
     // Ref.: http://localhost:3000/viz?x=1&y=2
     HTTP(FLAGS_iris_port).Register("/viz", [&api](Request r) {
