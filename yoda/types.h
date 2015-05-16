@@ -80,7 +80,7 @@ struct EntryWrapper {
       ar(CEREAL_NVP(error));
     }
   };
-  void RespondViaHTTP(Request r) {
+  void RespondViaHTTP(Request r) const {
     if (exists) {
       r(*entry);
     } else {

@@ -42,15 +42,9 @@ using namespace bricks::strings;
 using namespace bricks::gnuplot;
 using namespace yoda;
 
-DEFINE_bool(run, false, "Set to true to run indefinitely.");
 DEFINE_int32(iris_port, 3000, "");
 
-template <typename T>
-struct RESTfulResponse {
-  Request request;
-  explicit RESTfulResponse(Request request) : request(std::move(request)) {}
-  void operator()(T&& response) { request(std::forward<T>(response)); }
-};
+DEFINE_bool(run, false, "Set to true to run indefinitely.");
 
 // Flower ID, auto-increasing for test purposes.
 size_t number_of_flowers = 0;
@@ -60,9 +54,9 @@ TEST(Iris, Demo) {
   typedef API<KeyEntry<LabeledFlower>> TestAPI;
   TestAPI api("labeled_flowers");
 
-  HTTP(FLAGS_iris_port).Register("/import", [&api](Request r) {
-    EXPECT_EQ("POST", r.method);
-    const std::string data = r.body;
+  HTTP(FLAGS_iris_port).Register("/import", [&api](Request request) {
+    EXPECT_EQ("POST", request.method);
+    const std::string data = request.body;
     api.Call([data](TestAPI::T_CONTAINER_WRAPPER& cw) {
                // Skip the first line with labels.
                bool first_line = true;
@@ -87,7 +81,7 @@ TEST(Iris, Demo) {
                }
                return Printf("Successfully imported %d flowers.\n", static_cast<int>(number_of_flowers));
              },
-             RESTfulResponse<std::string>(std::move(r)));
+             std::move(request));
   });
 
   EXPECT_EQ("Successfully imported 150 flowers.\n",
@@ -99,19 +93,19 @@ TEST(Iris, Demo) {
 
   if (FLAGS_run) {
     // Ref.: http://localhost:3000/get?id=42
-    HTTP(FLAGS_iris_port).Register("/get", [&api](Request r) {
-      const auto id = FromString<int>(r.url.query["id"]);
+    HTTP(FLAGS_iris_port).Register("/get", [&api](Request request) {
+      const auto id = FromString<int>(request.url.query["id"]);
       api.Call([id](TestAPI::T_CONTAINER_WRAPPER& cw) { return cw.Get(id); },
-               RESTfulResponse<EntryWrapper<LabeledFlower>>(std::move(r)));
+               std::move(request));
     });
 
     // Ref.: [POST] http://localhost:3000/add?label=setosa&sl=5&sw=5&pl=5&pw=5
-    HTTP(FLAGS_iris_port).Register("/add", [&api](Request r) {
-      const std::string label = r.url.query["label"];
-      const auto sl = FromString<double>(r.url.query["sl"]);
-      const auto sw = FromString<double>(r.url.query["sw"]);
-      const auto pl = FromString<double>(r.url.query["pl"]);
-      const auto pw = FromString<double>(r.url.query["pw"]);
+    HTTP(FLAGS_iris_port).Register("/add", [&api](Request request) {
+      const std::string label = request.url.query["label"];
+      const auto sl = FromString<double>(request.url.query["sl"]);
+      const auto sw = FromString<double>(request.url.query["sw"]);
+      const auto pl = FromString<double>(request.url.query["pl"]);
+      const auto pw = FromString<double>(request.url.query["pw"]);
       // In real life this should be a POST.
       if (!label.empty()) {
         LabeledFlower flower(++number_of_flowers, sl, sw, pl, pw, label);
@@ -119,17 +113,17 @@ TEST(Iris, Demo) {
                    cw.Add(flower);
                    return "OK\n";
                  },
-                 RESTfulResponse<std::string>(std::move(r)));
+                 std::move(request));
       } else {
-        r("Need non-empty label, as well as sl/sw/pl/pw.\n");
+        request("Need non-empty label, as well as sl/sw/pl/pw.\n");
       }
     });
 
     // Ref.: http://localhost:3000/viz
     // Ref.: http://localhost:3000/viz?x=1&y=2
-    HTTP(FLAGS_iris_port).Register("/viz", [&api](Request r) {
-      auto x_dim = std::min(size_t(3), FromString<size_t>(r.url.query.get("x", "0")));
-      auto y_dim = std::min(size_t(3), FromString<size_t>(r.url.query.get("y", "1")));
+    HTTP(FLAGS_iris_port).Register("/viz", [&api](Request request) {
+      auto x_dim = std::min(size_t(3), FromString<size_t>(request.url.query.get("x", "0")));
+      auto y_dim = std::min(size_t(3), FromString<size_t>(request.url.query.get("y", "1")));
       if (y_dim == x_dim) {
         y_dim = (x_dim + 1) % 4;
       }
@@ -171,7 +165,7 @@ TEST(Iris, Demo) {
                  data.y_label = dimension_names[y_dim];
                  return data;
                },
-               PlotIrises(std::move(r)));
+               PlotIrises(std::move(request)));
     });
 
     HTTP(FLAGS_iris_port).Join();
