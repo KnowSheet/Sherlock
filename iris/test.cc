@@ -57,7 +57,8 @@ TEST(Iris, Demo) {
   HTTP(FLAGS_iris_port).Register("/import", [&api](Request request) {
     EXPECT_EQ("POST", request.method);
     const std::string data = request.body;
-    api.Call([data](TestAPI::T_CONTAINER_WRAPPER& cw) {
+    api.Call([data](TestAPI::T_CONTAINER_WRAPPER cw) {
+               auto mutable_flowers = cw.GetMutator<KeyEntry<LabeledFlower>>();
                // Skip the first line with labels.
                bool first_line = true;
                for (auto flower_definition_line : Split<ByLines>(data)) {
@@ -72,12 +73,12 @@ TEST(Iris, Demo) {
                  }
                  first_line = false;
                  // Parse flower data and add it.
-                 cw.Add(LabeledFlower(++number_of_flowers,
-                                      FromString<double>(flower_definition_fields[0]),
-                                      FromString<double>(flower_definition_fields[1]),
-                                      FromString<double>(flower_definition_fields[2]),
-                                      FromString<double>(flower_definition_fields[3]),
-                                      flower_definition_fields[4]));
+                 mutable_flowers.Add(LabeledFlower(++number_of_flowers,
+                                                   FromString<double>(flower_definition_fields[0]),
+                                                   FromString<double>(flower_definition_fields[1]),
+                                                   FromString<double>(flower_definition_fields[2]),
+                                                   FromString<double>(flower_definition_fields[3]),
+                                                   flower_definition_fields[4]));
                }
                return Printf("Successfully imported %d flowers.\n", static_cast<int>(number_of_flowers));
              },
@@ -95,7 +96,8 @@ TEST(Iris, Demo) {
     // Ref.: http://localhost:3000/get?id=42
     HTTP(FLAGS_iris_port).Register("/get", [&api](Request request) {
       const auto id = FromString<int>(request.url.query["id"]);
-      api.Call([id](TestAPI::T_CONTAINER_WRAPPER& cw) { return cw.Get(id); },
+      // TODO(dk+mz): Re-enable simple syntax?
+      api.Call([id](TestAPI::T_CONTAINER_WRAPPER cw) { return cw.GetAccessor<KeyEntry<LabeledFlower>>()[id]; },
                std::move(request));
     });
 
@@ -109,8 +111,9 @@ TEST(Iris, Demo) {
       // In real life this should be a POST.
       if (!label.empty()) {
         LabeledFlower flower(++number_of_flowers, sl, sw, pl, pw, label);
-        api.Call([flower](TestAPI::T_CONTAINER_WRAPPER& cw) {
-                   cw.Add(flower);
+        api.Call([flower](TestAPI::T_CONTAINER_WRAPPER cw) {
+                   // TODO(dk+mz): Re-enable simple syntax?
+                   cw.GetMutator<KeyEntry<LabeledFlower>>().Add(flower);
                    return "OK\n";
                  },
                  std::move(request));
@@ -155,10 +158,13 @@ TEST(Iris, Demo) {
           request(graph);
         }
       };
-      api.Call([x_dim, y_dim](TestAPI::T_CONTAINER_WRAPPER& cw) {
+      api.Call([x_dim, y_dim](TestAPI::T_CONTAINER_WRAPPER cw) {
+                 const auto flowers = cw.GetAccessor<KeyEntry<LabeledFlower>>();
                  PlotIrises::Data data;
                  for (size_t i = 1; i <= number_of_flowers; ++i) {
-                   const LabeledFlower& flower = cw.Get(i)();
+                   // TODO(dk+mz): Re-enable simple syntax?
+                   // const LabeledFlower& flower = cw.GetAccessor<KeyEntry<LabeledFlower>>()[i];
+                   const LabeledFlower& flower = flowers[i];
                    data.labeled_flowers[flower.label].emplace_back(flower.x[x_dim], flower.x[y_dim]);
                  }
                  data.x_label = dimension_names[x_dim];
