@@ -88,6 +88,8 @@ SOFTWARE.
 #include "api/key_entry/key_entry.h"
 #include "api/matrix/matrix_entry.h"
 
+#include "../../Bricks/net/api/api.h"  // For an HTTP listener.
+
 namespace yoda {
 
 // `yoda::APIWrapper` requires the list of specific entries to expose through the Yoda API.
@@ -152,8 +154,10 @@ struct APIWrapper
     NEXT next;
     std::promise<void> promise;
 
-    MQMessageFunctionWithNext(T_USER_FUNCTION<T_RETURN_VALUE>&& function, NEXT&& next)
-        : function(std::forward<T_USER_FUNCTION<T_RETURN_VALUE>>(function)), next(std::forward<NEXT>(next)) {}
+    MQMessageFunctionWithNext(T_USER_FUNCTION<T_RETURN_VALUE>&& function, NEXT&& next, std::promise<void> pr)
+        : function(std::forward<T_USER_FUNCTION<T_RETURN_VALUE>>(function)),
+          next(std::forward<NEXT>(next)),
+          promise(std::move(pr)) {}
 
     virtual void Process(YodaContainer<YT>&,
                          T_CONTAINER_WRAPPER container_wrapper,
