@@ -89,10 +89,20 @@ TEST(Iris, Demo) {
             HTTP(POSTFromFile(Printf("http://localhost:%d/import", FLAGS_iris_port), "dataset.tsv", "text/tsv"))
                 .body);
 
+  struct Dima {
+    bool Entry(std::unique_ptr<Padawan>& e, size_t, size_t) {
+      std::cerr << "Dima::Entry!\n";
+      return true;
+    }
+  };
+  Dima dima;
+  api.Subscribe(dima);
+
   // Ref.: http://localhost:3000/pubsub
   api.ExposeViaHTTP(FLAGS_iris_port, "/pubsub");
 
   if (FLAGS_run) {
+    /*
     // Ref.: http://localhost:3000/get?id=42
     HTTP(FLAGS_iris_port).Register("/get", [&api](Request request) {
       const auto id = FromString<int>(request.url.query["id"]);
@@ -173,6 +183,7 @@ TEST(Iris, Demo) {
                },
                PlotIrises(std::move(request)));
     });
+    */
 
     HTTP(FLAGS_iris_port).Join();
   }

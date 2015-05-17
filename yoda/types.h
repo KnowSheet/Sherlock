@@ -43,6 +43,8 @@ struct Padawan {
   typedef Padawan CEREAL_BASE_TYPE;
 
   uint64_t ms;
+
+  Padawan() : ms(static_cast<uint64_t>(bricks::time::Now())) {}
   virtual ~Padawan() = default;
 
   // TODO(dk+mz): This should go away with SFINAE-based timestamp extraction in Sherlock.
