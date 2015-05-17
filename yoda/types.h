@@ -77,7 +77,7 @@ struct EntryWrapper {
   struct NotFoundResponse {
     const std::string error = "NOT_FOUND";
     NotFoundResponse() {}
-    template<typename A>
+    template <typename A>
     void serialize(A& ar) {
       ar(CEREAL_NVP(error));
     }

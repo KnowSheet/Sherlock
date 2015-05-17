@@ -54,28 +54,11 @@ TEST(Iris, Demo) {
   typedef API<KeyEntry<LabeledFlower>> TestAPI;
   TestAPI api("labeled_flowers");
 
-  api.AsyncAdd(LabeledFlower(42, 0.1, 0.1, 0.1, 0.1, "The Answer")).Wait();
-
-  // Ref.: http://localhost:3000/stream
-  api.ExposeViaHTTP(FLAGS_iris_port, "/stream");
-  const std::string Z = "";  // For `clang-format`-indentation purposes.
-  EXPECT_EQ(Z,
-  /*
-  JSON(WithBaseType<Padawan>(KeyValueEntry(2, 0.50)), "entry") + '\n' +
-                JSON(WithBaseType<Padawan>(KeyValueEntry(3, 0.33)), "entry") + '\n' +
-                JSON(WithBaseType<Padawan>(KeyValueEntry(4, 0.25)), "entry") + '\n' +
-                JSON(WithBaseType<Padawan>(KeyValueEntry(5, 0.20)), "entry") + '\n' +
-                JSON(WithBaseType<Padawan>(KeyValueEntry(6, 0.17)), "entry") + '\n' +
-                JSON(WithBaseType<Padawan>(KeyValueEntry(7, 0.76)), "entry") + '\n',
-                */
-            HTTP(GET(Printf("http://localhost:%d/stream?cap=1", FLAGS_iris_port))).body);
-
-
   HTTP(FLAGS_iris_port).Register("/import", [&api](Request request) {
     EXPECT_EQ("POST", request.method);
     const std::string data = request.body;
     api.Call([data](TestAPI::T_CONTAINER_WRAPPER cw) {
-               auto mutable_flowers = cw.GetMutator<KeyEntry<LabeledFlower>>();
+               auto mutable_flowers = KeyEntry<LabeledFlower>::Mutator(cw);
                // Skip the first line with labels.
                bool first_line = true;
                for (auto flower_definition_line : Split<ByLines>(data)) {
@@ -106,23 +89,35 @@ TEST(Iris, Demo) {
             HTTP(POSTFromFile(Printf("http://localhost:%d/import", FLAGS_iris_port), "dataset.tsv", "text/tsv"))
                 .body);
 
-  /*
-  struct Dima {
-    bool Entry(std::unique_ptr<Padawan>& e, size_t, size_t) {
-      std::cerr << "Dima::Entry!\n";
-      return true;
-    }
-  };
-  Dima dima;
-  api.Subscribe(dima);
-  */
+  // Ref.: http://localhost:3000/stream
+  api.ExposeViaHTTP(FLAGS_iris_port, "/stream");
+
+  // The very first flower.
+  const auto result1 = ParseJSON<std::unique_ptr<Padawan>>(
+      HTTP(GET(Printf("http://localhost:%d/stream?cap=1", FLAGS_iris_port))).body);
+  const LabeledFlower& flower1 = *static_cast<const LabeledFlower*>(result1.get());
+  EXPECT_DOUBLE_EQ(5.1, flower1.SL);
+  EXPECT_DOUBLE_EQ(3.5, flower1.SW);
+  EXPECT_DOUBLE_EQ(1.4, flower1.PL);
+  EXPECT_DOUBLE_EQ(0.2, flower1.PW);
+  EXPECT_EQ("setosa", flower1.label);
+
+  // The very last flower.
+  const auto result2 = ParseJSON<std::unique_ptr<Padawan>>(
+      HTTP(GET(Printf("http://localhost:%d/stream?n=1", FLAGS_iris_port))).body);
+  const LabeledFlower& flower2 = *static_cast<const LabeledFlower*>(result2.get());
+  EXPECT_DOUBLE_EQ(5.9, flower2.SL);
+  EXPECT_DOUBLE_EQ(3.0, flower2.SW);
+  EXPECT_DOUBLE_EQ(5.1, flower2.PL);
+  EXPECT_DOUBLE_EQ(1.8, flower2.PW);
+  EXPECT_EQ("virginica", flower2.label);
 
   if (FLAGS_run) {
     // Ref.: http://localhost:3000/get?id=42
     HTTP(FLAGS_iris_port).Register("/get", [&api](Request request) {
       const auto id = FromString<int>(request.url.query["id"]);
       // TODO(dk+mz): Re-enable simple syntax?
-      api.Call([id](TestAPI::T_CONTAINER_WRAPPER cw) { return cw.GetAccessor<KeyEntry<LabeledFlower>>()[id]; },
+      api.Call([id](TestAPI::T_CONTAINER_WRAPPER cw) { return KeyEntry<LabeledFlower>::Accessor(cw)[id]; },
                std::move(request));
     });
 
@@ -138,7 +133,7 @@ TEST(Iris, Demo) {
         LabeledFlower flower(++number_of_flowers, sl, sw, pl, pw, label);
         api.Call([flower](TestAPI::T_CONTAINER_WRAPPER cw) {
                    // TODO(dk+mz): Re-enable simple syntax?
-                   cw.GetMutator<KeyEntry<LabeledFlower>>().Add(flower);
+                   KeyEntry<LabeledFlower>::Mutator(cw).Add(flower);
                    return "OK\n";
                  },
                  std::move(request));
@@ -184,7 +179,7 @@ TEST(Iris, Demo) {
         }
       };
       api.Call([x_dim, y_dim](TestAPI::T_CONTAINER_WRAPPER cw) {
-                 const auto flowers = cw.GetAccessor<KeyEntry<LabeledFlower>>();
+                 const auto flowers = KeyEntry<LabeledFlower>::Accessor(cw);
                  PlotIrises::Data data;
                  for (size_t i = 1; i <= number_of_flowers; ++i) {
                    // TODO(dk+mz): Re-enable simple syntax?

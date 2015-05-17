@@ -112,10 +112,6 @@ struct APIWrapper
         stream_listener_(mq_),
         sherlock_listener_scope_(stream_.Subscribe(stream_listener_)) {}
 
-  void ExposeViaHTTP(int port, const std::string& endpoint) {
-    HTTP(port).Register(endpoint, stream_);
-  }
-
   typename YT::T_STREAM_TYPE& UnsafeStream() { return stream_; }
 
   template <typename F>
@@ -158,8 +154,10 @@ struct APIWrapper
     NEXT next;
     std::promise<void> promise;
 
-    MQMessageFunctionWithNext(T_USER_FUNCTION<T_RETURN_VALUE>&& function, NEXT&& next)
-        : function(std::forward<T_USER_FUNCTION<T_RETURN_VALUE>>(function)), next(std::forward<NEXT>(next)) {}
+    MQMessageFunctionWithNext(T_USER_FUNCTION<T_RETURN_VALUE>&& function, NEXT&& next, std::promise<void> pr)
+        : function(std::forward<T_USER_FUNCTION<T_RETURN_VALUE>>(function)),
+          next(std::forward<NEXT>(next)),
+          promise(std::move(pr)) {}
 
     virtual void Process(YodaContainer<YT>&,
                          T_CONTAINER_WRAPPER container_wrapper,
