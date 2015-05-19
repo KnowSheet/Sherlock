@@ -84,13 +84,13 @@ struct MatrixEntry {
   typedef CellAlreadyExistsException<T_ENTRY> T_CELL_ALREADY_EXISTS_EXCEPTION;
   typedef EntryShouldExistException<T_ENTRY> T_ENTRY_SHOULD_EXIST_EXCEPTION;
 
-  template <typename CW>
-  static decltype(std::declval<CW>().template Accessor<MatrixEntry<ENTRY>>()) Accessor(CW&& c) {
+  template <typename DATA>
+  static decltype(std::declval<DATA>().template Accessor<MatrixEntry<ENTRY>>()) Accessor(DATA&& c) {
     return c.template Accessor<MatrixEntry<ENTRY>>();
   }
 
-  template <typename CW>
-  static decltype(std::declval<CW>().template Mutator<MatrixEntry<ENTRY>>()) Mutator(CW&& c) {
+  template <typename DATA>
+  static decltype(std::declval<DATA>().template Mutator<MatrixEntry<ENTRY>>()) Mutator(DATA&& c) {
     return c.template Mutator<MatrixEntry<ENTRY>>();
   }
 };
@@ -119,9 +119,7 @@ struct YodaImpl<YT, MatrixEntry<ENTRY>> {
                           typename YET::T_ENTRY_CALLBACK on_success,
                           typename YET::T_CELL_CALLBACK on_failure)
         : row(row), col(col), on_success(on_success), on_failure(on_failure) {}
-    virtual void Process(YodaContainer<YT>& container,
-                         ContainerWrapper<YT>,
-                         typename YT::T_STREAM_TYPE&) override {
+    virtual void Process(YodaContainer<YT>& container, YodaData<YT>, typename YT::T_STREAM_TYPE&) override {
       container(std::ref(*this));
     }
   };
@@ -147,7 +145,7 @@ struct YodaImpl<YT, MatrixEntry<ENTRY>> {
     // that might not yet have reached the storage, and thus relying on the fact that an API `Get()` call
     // reflects updated data is not reliable from the point of data synchronization.
     virtual void Process(YodaContainer<YT>& container,
-                         ContainerWrapper<YT>,
+                         YodaData<YT>,
                          typename YT::T_STREAM_TYPE& stream) override {
       container(std::ref(*this), std::ref(stream));
     }
@@ -197,6 +195,10 @@ struct YodaImpl<YT, MatrixEntry<ENTRY>> {
     operator()(apicalls::AsyncAdd(), entry).Go();
   }
 
+  YET operator()(apicalls::template ExtractYETFromE<typename YET::T_ENTRY>);
+  YET operator()(apicalls::template ExtractYETFromK<typename YET::T_ROW>);
+  YET operator()(apicalls::template ExtractYETFromK<typename YET::T_COL>);
+
  private:
   typename YT::T_MQ& mq_;
 };
@@ -210,9 +212,13 @@ struct Container<YT, MatrixEntry<ENTRY>> {
   using CF = bricks::copy_free<T>;
 
   // Event: The entry has been scanned from the stream.
-  void operator()(const typename YET::T_ENTRY& entry) {
-    forward_[GetRow(entry)][GetCol(entry)] = entry;
-    transposed_[GetCol(entry)][GetRow(entry)] = entry;
+  void operator()(ENTRY& entry, size_t index) {
+    std::unique_ptr<EntryWithIndex<ENTRY>>& placeholder = map_[std::make_pair(GetRow(entry), GetCol(entry))];
+    if (index > placeholder->index) {
+      placeholder->Update(index, std::move(entry));
+      forward_[GetRow(entry)][GetCol(entry)] = &placeholder->entry;
+      transposed_[GetCol(entry)][GetRow(entry)] = &placeholder->entry;
+    }
   }
 
   // Event: `Get()`.
@@ -260,12 +266,15 @@ struct Container<YT, MatrixEntry<ENTRY>> {
       if (msg.on_failure) {  // Callback function defined.
         msg.on_failure();
       } else {  // Throw.
-        msg.pr.set_exception(std::make_exception_ptr(typename YET::T_CELL_ALREADY_EXISTS_EXCEPTION(msg.e)));
+        msg.pr.set_exception(std::make_exception_ptr(
+            typename YET::T_CELL_ALREADY_EXISTS_EXCEPTION(GetRow(msg.e), GetCol(msg.e))));
       }
     } else {
-      forward_[GetRow(msg.e)][GetCol(msg.e)] = msg.e;
-      transposed_[GetCol(msg.e)][GetRow(msg.e)] = msg.e;
-      stream.Publish(msg.e);
+      const size_t index = stream.Publish(msg.e);
+      std::unique_ptr<EntryWithIndex<ENTRY>>& placeholder = map_[std::make_pair(GetRow(msg.e), GetCol(msg.e))];
+      placeholder = make_unique(EntryWithIndex<ENTRY>(index, msg.e));
+      forward_[GetRow(msg.e)][GetCol(msg.e)] = &placeholder->entry;
+      transposed_[GetCol(msg.e)][GetRow(msg.e)] = &placeholder->entry;
       if (msg.on_success) {
         msg.on_success();
       } else {
@@ -275,7 +284,7 @@ struct Container<YT, MatrixEntry<ENTRY>> {
   }
 
   // Synchronous `Get()` to be used in user functions.
-  const EntryWrapper<typename YET::T_ENTRY> operator()(container_wrapper::Get,
+  const EntryWrapper<typename YET::T_ENTRY> operator()(container_data::Get,
                                                        const typename YET::T_ROW& row,
                                                        const typename YET::T_COL& col) const {
     const auto rit = forward_.find(row);
@@ -288,9 +297,10 @@ struct Container<YT, MatrixEntry<ENTRY>> {
     return EntryWrapper<typename YET::T_ENTRY>();
   }
 
+  /*
   // Synchronous `Add()` to be used in user functions.
   // NOTE: `stream` is passed via const reference to make `decltype()` work.
-  void operator()(container_wrapper::Add,
+  void operator()(container_data::Add,
                   const typename YT::T_STREAM_TYPE& stream,
                   const typename YET::T_ENTRY& entry) {
     bool cell_exists = false;
@@ -299,13 +309,16 @@ struct Container<YT, MatrixEntry<ENTRY>> {
       cell_exists = static_cast<bool>(rit->second.count(GetCol(entry)));
     }
     if (cell_exists) {
-      throw typename YET::T_CELL_ALREADY_EXISTS_EXCEPTION(entry);
+      throw typename YET::T_CELL_ALREADY_EXISTS_EXCEPTION(GetRow(entry), GetCol(entry));
     } else {
+      // TODO(dk+mz): Did't we fix this `const_cast`?
+      const size_t index = const_cast<typename YT::T_STREAM_TYPE&>(stream).Publish(entry);
+      std::unique_ptr<EntryWithIndex<ENTRY>>& placeholder = map_[std::make_pair(GetRow(entry), GetCol(entry))];
       forward_[GetRow(entry)][GetCol(entry)] = entry;
       transposed_[GetCol(entry)][GetRow(entry)] = entry;
-      const_cast<typename YT::T_STREAM_TYPE&>(stream).Publish(entry);
     }
   }
+  */
 
   class Accessor {
    public:
@@ -355,9 +368,12 @@ struct Container<YT, MatrixEntry<ENTRY>> {
 
     // Non-throwing method. If entry with the same key already exists, performs silent overwrite.
     void Add(const ENTRY& entry) {
-      mutable_.forward_[GetRow(entry)][GetCol(entry)] = entry;
-      mutable_.transposed_[GetCol(entry)][GetRow(entry)] = entry;
-      stream_.Publish(entry);
+      const size_t index = stream_.Publish(entry);
+      std::unique_ptr<EntryWithIndex<ENTRY>>& placeholder =
+          mutable_.map_[std::make_pair(GetRow(entry), GetCol(entry))];
+      placeholder = make_unique<EntryWithIndex<ENTRY>>(index, entry);
+      mutable_.forward_[GetRow(entry)][GetCol(entry)] = &placeholder->entry;
+      mutable_.transposed_[GetCol(entry)][GetRow(entry)] = &placeholder->entry;
     }
 
    private:
@@ -365,16 +381,22 @@ struct Container<YT, MatrixEntry<ENTRY>> {
     typename YT::T_STREAM_TYPE& stream_;
   };
 
-  Accessor operator()(container_wrapper::RetrieveAccessor<YET>) const { return Accessor(*this); }
+  Accessor operator()(container_data::RetrieveAccessor<YET>) const { return Accessor(*this); }
 
-  Mutator operator()(container_wrapper::RetrieveMutator<YET>, typename YT::T_STREAM_TYPE& stream) {
+  Mutator operator()(container_data::RetrieveMutator<YET>, typename YT::T_STREAM_TYPE& stream) {
     return Mutator(*this, std::ref(stream));
   }
 
+  // TODO(dkorolev): This is duplication. We certainly don't need it.
+  YET operator()(apicalls::template ExtractYETFromE<typename YET::T_ENTRY>);
+  YET operator()(apicalls::template ExtractYETFromK<typename YET::T_ROW>);
+  YET operator()(apicalls::template ExtractYETFromK<typename YET::T_COL>);
+
  private:
-  // TODO(dkorolev)+TODO(mzhurovich): Eventually we'll think of storing each entry only once.
-  T_MAP_TYPE<typename YET::T_ROW, T_MAP_TYPE<typename YET::T_COL, typename YET::T_ENTRY>> forward_;
-  T_MAP_TYPE<typename YET::T_COL, T_MAP_TYPE<typename YET::T_ROW, typename YET::T_ENTRY>> transposed_;
+  T_MAP_TYPE<std::pair<typename YET::T_ROW, typename YET::T_COL>,
+             std::unique_ptr<EntryWithIndex<typename YET::T_ENTRY>>> map_;
+  T_MAP_TYPE<typename YET::T_ROW, T_MAP_TYPE<typename YET::T_COL, const typename YET::T_ENTRY*>> forward_;
+  T_MAP_TYPE<typename YET::T_COL, T_MAP_TYPE<typename YET::T_ROW, const typename YET::T_ENTRY*>> transposed_;
 };
 
 }  // namespace yoda

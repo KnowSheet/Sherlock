@@ -25,10 +25,12 @@ SOFTWARE.
 
 #define BRICKS_MOCK_TIME
 
-#include <atomic>
+#include "docu/docu_2.cc"
 
 #include "api/key_entry/test.cc"
 #include "api/matrix/test.cc"
+
+#include <atomic>
 
 #include "yoda.h"
 #include "test_types.h"
@@ -65,8 +67,8 @@ TEST(Yoda, CoverTest) {
 
   // Asynchronous call of user function.
   std::atomic_bool done(false);
-  api.Call([&](TestAPI::T_CONTAINER_WRAPPER cw) {
-    auto KVEntries = KeyEntry<KeyValueEntry>::Accessor(cw);
+  api.Call([&](TestAPI::T_DATA data) {
+    auto KVEntries = KeyEntry<KeyValueEntry>::Accessor(data);
 
     EXPECT_TRUE(KVEntries.Exists(1));
     EXPECT_FALSE(KVEntries.Exists(100500));
@@ -77,39 +79,39 @@ TEST(Yoda, CoverTest) {
 
     // `operator[]` syntax.
     EXPECT_EQ(42.0, static_cast<const KeyValueEntry&>(KVEntries[1]).value);
-    KeyValueEntry kve34;
-    ASSERT_THROW(kve34 = KVEntries[34], yoda::KeyNotFoundCoverException);
+    ASSERT_THROW(static_cast<void>(static_cast<const KeyValueEntry&>(KVEntries[34]).value),
+                 yoda::KeyNotFoundCoverException);
 
-    auto mutable_kve = KeyEntry<KeyValueEntry>::Mutator(cw);
+    auto mutable_kve = KeyEntry<KeyValueEntry>::Mutator(data);
     mutable_kve.Add(KeyValueEntry(128, 512.0));
     EXPECT_EQ(512.0, static_cast<const KeyValueEntry&>(mutable_kve[128]).value);
 
-    auto mutable_matrix = MatrixEntry<MatrixCell>::Mutator(cw);
+    auto mutable_matrix = MatrixEntry<MatrixCell>::Mutator(data);
     EXPECT_EQ(2, static_cast<const MatrixCell&>(mutable_matrix.Get(1, "test")).value);
     /*
-        const bool exists = cw.Get(1);
+        const bool exists = data.Get(1);
         EXPECT_TRUE(exists);
-        yoda::EntryWrapper<KeyValueEntry> entry = cw.Get(1);
+        yoda::EntryWrapper<KeyValueEntry> entry = data.Get(1);
         EXPECT_EQ(42.0, entry().value);
-        EXPECT_TRUE(cw.Get(42, "answer"));
-        EXPECT_EQ(100, cw.Get(42, "answer")().value);
-        EXPECT_TRUE(cw.Get("foo"));
-        EXPECT_EQ("bar", cw.Get("foo")().foo);
+        EXPECT_TRUE(data.Get(42, "answer"));
+        EXPECT_EQ(100, data.Get(42, "answer")().value);
+        EXPECT_TRUE(data.Get("foo"));
+        EXPECT_EQ("bar", data.Get("foo")().foo);
 
-        EXPECT_FALSE(cw.Get(-1));
-        EXPECT_FALSE(cw.Get(41, "not an answer"));
-        EXPECT_FALSE(cw.Get("bazinga"));
+        EXPECT_FALSE(data.Get(-1));
+        EXPECT_FALSE(data.Get(41, "not an answer"));
+        EXPECT_FALSE(data.Get("bazinga"));
 
         // Accessing nonexistent entry throws an exception.
-        ASSERT_THROW(cw.Get(1000)(), yoda::NonexistentEntryAccessed);
+        ASSERT_THROW(data.Get(1000)(), yoda::NonexistentEntryAccessed);
 
         double result = 0.0;
         for (int i = 1; i <= 3; ++i) {
-          result += cw.Get(i)().value * static_cast<double>(cw.Get(i, "test")().value);
+          result += data.Get(i)().value * static_cast<double>(data.Get(i, "test")().value);
         }
-        cw.Add(StringKVEntry("result", Printf("%.2f", result)));
-        cw.Add(MatrixCell(123, "test", 11));
-        cw.Add(KeyValueEntry(42, 1.23));
+        data.Add(StringKVEntry("result", Printf("%.2f", result)));
+        data.Add(MatrixCell(123, "test", 11));
+        data.Add(KeyValueEntry(42, 1.23));
     */
     done = true;
   });
@@ -144,7 +146,7 @@ TEST(Yoda, CoverTest) {
           // Note: C standard does not regulate the order in which parameters are evaluated,
           // thus, if any data should be extracted from `r.query`, it should be done before the next line
           // since it does `std::move(r)`.
-          api.Call([](TestAPI::T_CONTAINER_WRAPPER& cw) { return cw.Get(2)().value * cw.Get(3)().value; },
+          api.Call([](TestAPI::T_DATA& data) { return data.Get(2)().value * data.Get(3)().value; },
                    HappyEnding(std::move(r)));
         });
     const auto response = HTTP(GET(Printf("http://localhost:%d/omfg", FLAGS_yoda_test_port)));
